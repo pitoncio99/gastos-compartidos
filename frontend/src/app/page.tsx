@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 
 const Calculadora = () => {
-  const [modoGrupo, setModoGrupo] = useState<'bd' | 'manual'>('manual'); // 'bd' o 'manual'
-  const [gruposGuardados, setGruposGuardados] = useState<any[]>([]); 
+  const [modoGrupo, setModoGrupo] = useState<'bd' | 'manual'>('manual');
+  const [gruposGuardados, setGruposGuardados] = useState<any[]>([]);
   const [grupoSeleccionadoId, setGrupoSeleccionadoId] = useState<string>('');
-  const [personas, setPersonas] = useState<string[]>(['A', 'B', 'C', 'D']);
+  const [personas, setPersonas] = useState<string[]>([]);
   const [productos, setProductos] = useState<{
     nombre: string;
     precio: number;
@@ -19,7 +19,10 @@ const Calculadora = () => {
     consumidores: [] as string[],
   });
 
-  // Cargar grupos al iniciar si es necesario
+  const [modoEdicion, setModoEdicion] = useState<number | null>(null);
+
+  const formularioRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const fetchGrupos = async () => {
       try {
@@ -31,16 +34,21 @@ const Calculadora = () => {
         console.error('Error al cargar grupos:', err);
       }
     };
-
     fetchGrupos();
   }, []);
 
-  // Cuando se selecciona un grupo, actualizar las personas
   useEffect(() => {
     if (modoGrupo === 'bd' && grupoSeleccionadoId) {
       const grupo = gruposGuardados.find((g) => g._id === grupoSeleccionadoId);
       if (grupo) {
-        setPersonas(grupo.members); // Cambié "personas" a "members" según el JSON de tu respuesta
+        setPersonas(grupo.members);
+      } else {
+        setPersonas([]);
+      }
+    }
+    if (modoGrupo === 'manual') {
+      if (personas.length === 0) {
+        setPersonas([]);
       }
     }
   }, [grupoSeleccionadoId, gruposGuardados, modoGrupo]);
@@ -54,28 +62,54 @@ const Calculadora = () => {
     }));
   };
 
+  const toggleTodosConsumidores = () => {
+    if (nuevoProducto.consumidores.length === personas.length) {
+      setNuevoProducto((prev) => ({ ...prev, consumidores: [] }));
+    } else {
+      setNuevoProducto((prev) => ({ ...prev, consumidores: [...personas] }));
+    }
+  };
+
   const agregarProducto = () => {
-    setProductos((prev) => [...prev, nuevoProducto]);
+    if (modoEdicion !== null) {
+      const actualizados = [...productos];
+      actualizados[modoEdicion] = nuevoProducto;
+      setProductos(actualizados);
+      setModoEdicion(null);
+    } else {
+      setProductos((prev) => [...prev, nuevoProducto]);
+    }
     setNuevoProducto({ nombre: '', precio: 0, consumidores: [] });
+  };
+
+  const editarProducto = (index: number) => {
+    setNuevoProducto(productos[index]);
+    setModoEdicion(index);
+
+    // Scroll automático al formulario
+    formularioRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const eliminarProducto = (index: number) => {
+    setProductos((prev) => prev.filter((_, i) => i !== index));
   };
 
   const calcularDeudas = () => {
     const deudas: Record<string, number> = {};
     personas.forEach((p) => (deudas[p] = 0));
-
     productos.forEach((producto) => {
-      const montoPorPersona = producto.precio / producto.consumidores.length;
-      producto.consumidores.forEach((persona) => {
-        deudas[persona] += montoPorPersona;
-      });
+      if (producto.consumidores.length > 0) {
+        const montoPorPersona = producto.precio / producto.consumidores.length;
+        producto.consumidores.forEach((persona) => {
+          deudas[persona] += montoPorPersona;
+        });
+      }
     });
-
     return deudas;
   };
 
   const deudas = calcularDeudas();
 
-  // Función para guardar los totales
   const guardarTotales = async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE;
@@ -102,6 +136,10 @@ const Calculadora = () => {
     }
   };
 
+  const tienePersonasValidas = personas.length > 0;
+  const puedeAgregarProducto = nuevoProducto.consumidores.length > 0;
+  const puedeGuardarTotales = productos.length > 0;
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex justify-between mb-4">
@@ -113,18 +151,25 @@ const Calculadora = () => {
         </Link>
       </div>
 
-      <h1 className="text-2xl font-bold mb-4">Configuración de personas</h1>
+      <h2 className="text-2xl font-bold mb-4">Configuración de personas</h2>
 
       <div className="flex gap-4 mb-4">
         <button
           className={`px-4 py-2 rounded ${modoGrupo === 'manual' ? 'bg-blue-500 text-white' : 'bg-gray-300'}`}
-          onClick={() => setModoGrupo('manual')}
+          onClick={() => {
+            setModoGrupo('manual');
+            setGrupoSeleccionadoId('');
+            setPersonas([]);
+          }}
         >
           Personalizar rápido
         </button>
         <button
           className={`px-4 py-2 rounded ${modoGrupo === 'bd' ? 'bg-blue-500 text-white' : 'bg-gray-300'}`}
-          onClick={() => setModoGrupo('bd')}
+          onClick={() => {
+            setModoGrupo('bd');
+            setPersonas([]);
+          }}
         >
           Usar grupo guardado
         </button>
@@ -136,9 +181,9 @@ const Calculadora = () => {
           <input
             type="text"
             className="border p-2 mb-2 w-full"
-            placeholder="Escribe nombres de personas separados por comas"
+            placeholder="Escribe nombres separados por comas"
             value={personas.join(', ')}
-            onChange={(e) => setPersonas(e.target.value.split(',').map((p) => p.trim()))}
+            onChange={(e) => setPersonas(e.target.value.split(',').map((p) => p.trim()).filter((p) => p))}
           />
         </div>
       ) : (
@@ -159,69 +204,101 @@ const Calculadora = () => {
         </div>
       )}
 
-      <h1 className="text-2xl font-bold mb-4">Agregar producto</h1>
+      {tienePersonasValidas && (
+        <>
+          <h2 className="text-2xl font-bold mb-4">{modoEdicion !== null ? 'Editar producto' : 'Agregar producto'}</h2>
 
-      <input
-        className="border p-2 mb-2 w-full"
-        placeholder="Nombre del producto"
-        value={nuevoProducto.nombre}
-        onChange={(e) => setNuevoProducto({ ...nuevoProducto, nombre: e.target.value })}
-      />
-      <input
-        type="number"
-        className="border p-2 mb-2 w-full"
-        placeholder="Precio"
-        value={nuevoProducto.precio || ''}
-        onChange={(e) => setNuevoProducto({ ...nuevoProducto, precio: Number(e.target.value) })}
-      />
+          <div ref={formularioRef}>
+            <input
+              className="border p-2 mb-2 w-full"
+              placeholder="Nombre del producto"
+              value={nuevoProducto.nombre}
+              onChange={(e) => setNuevoProducto({ ...nuevoProducto, nombre: e.target.value })}
+            />
+            <input
+              type="number"
+              className="border p-2 mb-2 w-full"
+              placeholder="Precio"
+              value={nuevoProducto.precio || ''}
+              onChange={(e) => setNuevoProducto({ ...nuevoProducto, precio: Number(e.target.value) })}
+            />
 
-      <div className="mb-4">
-        <span className="font-semibold">¿Quiénes lo consumieron?</span>
-        <div className="flex flex-wrap gap-2 mt-2">
-          {personas.map((nombre) => (
-            <label key={nombre} className="flex items-center gap-1">
-              <input
-                type="checkbox"
-                checked={nuevoProducto.consumidores.includes(nombre)}
-                onChange={() => toggleConsumidor(nombre)}
-              />
-              {nombre}
-            </label>
-          ))}
-        </div>
-      </div>
+            <div className="mb-4">
+              <span className="font-semibold">¿Quiénes lo consumieron?</span>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {personas.map((nombre) => (
+                  <label key={nombre} className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={nuevoProducto.consumidores.includes(nombre)}
+                      onChange={() => toggleConsumidor(nombre)}
+                    />
+                    {nombre}
+                  </label>
+                ))}
+              </div>
+              <button
+                onClick={toggleTodosConsumidores}
+                className="mt-2 bg-gray-300 hover:bg-gray-400 text-black px-2 py-1 rounded"
+              >
+                {nuevoProducto.consumidores.length === personas.length ? 'Desmarcar todos' : 'Marcar todos'}
+              </button>
+            </div>
 
-      <button onClick={agregarProducto} className="bg-blue-500 text-white px-4 py-2 rounded">
-        Agregar
-      </button>
+            <button
+              onClick={agregarProducto}
+              className={`px-4 py-2 rounded ${puedeAgregarProducto ? 'bg-blue-500 text-white' : 'bg-gray-400 text-gray-700'}`}
+              disabled={!puedeAgregarProducto}
+            >
+              {modoEdicion !== null ? 'Guardar cambios' : 'Agregar producto'}
+            </button>
+          </div>
 
-      <hr className="my-6" />
+          <hr className="my-6" />
 
-      <h2 className="text-xl font-semibold mb-2">Productos agregados</h2>
-      <ul className="space-y-2 mb-6">
-        {productos.map((p, index) => (
-          <li key={index} className="border p-2 rounded">
-            {p.nombre} - ${p.precio} - Consumido por: {p.consumidores.join(', ')}
-          </li>
-        ))}
-      </ul>
+          <h2 className="text-xl font-semibold mb-2">Productos agregados</h2>
+          <ul className="space-y-2 mb-6">
+            {productos.map((p, index) => (
+              <li key={index} className="border p-2 rounded flex justify-between items-center">
+                <div>
+                  {p.nombre} - ${p.precio} - Consumido por: {p.consumidores.join(', ')}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => editarProducto(index)}
+                    className="bg-yellow-400 text-white px-2 py-1 rounded"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    onClick={() => eliminarProducto(index)}
+                    className="bg-red-500 text-white px-2 py-1 rounded"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
 
-      <h2 className="text-xl font-semibold mb-2">Total por persona</h2>
-      <ul className="space-y-1">
-        {personas.map((persona) => (
-          <li key={persona} className="text-gray-800">
-            {persona}: ${deudas[persona].toFixed(0)}
-          </li>
-        ))}
-      </ul>
+          <h2 className="text-xl font-semibold mb-2">Total por persona</h2>
+          <ul className="space-y-1">
+            {personas.map((persona) => (
+              <li key={persona} className="text-gray-800">
+                {persona}: ${deudas[persona].toFixed(0)}
+              </li>
+            ))}
+          </ul>
 
-      {/* Botón para guardar los totales */}
-      <button
-        onClick={guardarTotales}
-        className="bg-green-500 text-white px-4 py-2 rounded mt-4"
-      >
-        Guardar Totales
-      </button>
+          <button
+            onClick={guardarTotales}
+            className={`mt-4 px-4 py-2 rounded ${puedeGuardarTotales ? 'bg-green-500 text-white' : 'bg-gray-400 text-gray-700'}`}
+            disabled={!puedeGuardarTotales}
+          >
+            Guardar Totales
+          </button>
+        </>
+      )}
     </div>
   );
 };
