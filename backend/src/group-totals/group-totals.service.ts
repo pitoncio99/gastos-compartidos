@@ -13,11 +13,12 @@ export class GroupTotalsService {
 
   // Crear los totales
   async create(groupTotalsDto: GroupTotalsDto): Promise<GroupTotals> {
-    const { groupId, deudas, productos } = groupTotalsDto;
+    const { groupId, deudas, productos, nombre } = groupTotalsDto;
   
     const createdTotals = new this.groupTotalsModel({
       groupId: new mongoose.Types.ObjectId(groupId), // <- transformar aquí
       deudas,
+      nombre,
       productos,
       createdAt: new Date(),
     });

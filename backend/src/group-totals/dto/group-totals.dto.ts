@@ -7,6 +7,9 @@ export class GroupTotalsDto {
   @IsObject()
   readonly deudas: Record<string, number>;
 
+  @IsString()
+  readonly nombre: string;
+
   @IsArray()
   readonly productos: Array<{
     nombre: string;
